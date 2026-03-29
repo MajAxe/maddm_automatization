@@ -1,0 +1,632 @@
+
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{lmodern}
+\usepackage[a4paper,margin=2.2cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{array,booktabs,longtable,tabularx}
+\usepackage[dvipsnames]{xcolor}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{caption}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=MidnightBlue,
+  citecolor=MidnightBlue,
+  urlcolor=MidnightBlue,
+  pdftitle={Manuel d'utilisation des scripts MadDM},
+  pdfauthor={OpenAI},
+  pdfsubject={Documentation scientifique LaTeX},
+  pdfkeywords={MadDM, MadGraph5, relic density, direct detection, indirect detection, Python}
+}
+
+\setlength{\headheight}{14pt}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{Manuel d'utilisation des scripts MadDM}
+\fancyhead[R]{\thepage}
+
+\definecolor{codebg}{RGB}{247,248,250}
+\definecolor{codeframe}{RGB}{220,223,228}
+\definecolor{sectionblue}{RGB}{18,62,125}
+
+\titleformat{\section}{\large\bfseries\color{sectionblue}}{\thesection}{0.6em}{}
+\titleformat{\subsection}{\normalsize\bfseries\color{sectionblue}}{\thesubsection}{0.6em}{}
+
+\lstdefinestyle{bashstyle}{
+  basicstyle=\ttfamily\small,
+  backgroundcolor=\color{codebg},
+  frame=single,
+  rulecolor=\color{codeframe},
+  frameround=tttt,
+  breaklines=true,
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false
+}
+
+\newcommand{\script}[1]{\texttt{#1}}
+\newcommand{\opt}[1]{\texttt{\detokenize{#1}}}
+\newcommand{\file}[1]{\texttt{#1}}
+\newcommand{\mad}{\textsc{MadDM}}
+\newcommand{\mg}{\textsc{MG5\_aMC}}
+\newcommand{\oh}{$\Omega h^2$}
+
+\begin{document}
+\pagenumbering{gobble}
+
+\begin{titlepage}
+\centering
+\vspace*{2.2cm}
+{\Huge\bfseries Manuel d'utilisation de deux scripts d'automatisation pour \mad\par}
+\vspace{0.5cm}
+{\Large \script{scan\_relic\_paral\_py3.py} et \script{scan4\_heatmap.py}\par}
+\vspace{1.2cm}
+
+\begin{minipage}{0.88\textwidth}
+\small
+\textbf{Objet.} Ce document décrit l'arborescence des commandes, la logique de fonctionnement et les sorties produites par deux scripts Python destinés à automatiser des études de matière noire avec \mad. Le premier pilote les scans de densité relique et l'extraction d'observables de détection directe et indirecte. Le second post-traite les fichiers CSV issus du scan 4 afin de produire des cartes, des re-scalings en couplage et des courbes iso-$\Omega h^2$.
+\end{minipage}
+
+\vspace{1.5cm}
+{\normalsize\sffamily\bfseries Ruben CLAIE\quad\href{mailto:ruben.claie--ferrachat@etu.sorbonne-universite.fr}{\texttt{ruben.claie--ferrachat@etu.sorbonne-universite.fr}}\par}
+\vspace{0.7cm}
+{\normalsize\sffamily\bfseries Lucie DESPEYROUX\quad\href{mailto:lucie.despeyroux@etu.sorbonne-universite.fr}{\texttt{lucie.despeyroux@etu.sorbonne-universite.fr}}\par}
+\vspace{2cm}
+
+\begin{minipage}{0.88\textwidth}
+\small
+{\normalsize\color{red}\textbf{Attention.} Ne vaut actuellement que pour l'étude d'un modèle en t-channel avec un seul couplage au quark droit bottom. Si vous étudiez un autre couplage, changez les mentions de bbx et les numéros correspondant à votre modèle (dans les argparse). \\
+
+Seulement testé avec le modèle suivant : \href{https://github.com/BFuks/DMSimpt/tree/main/DMSimpt_v2_0_LOmassive}{DMSimpt\_v2\_0\_LOmassive (BFuks)} avec une \emph{restrict card} appropriée. Fait pour la version \href{https://github.com/mg5amcnlo/mg5amcnlo/releases/tag/v2.9.27}{MG5\_aMC\_v2\_9\_27} et la \href{https://github.com/mg5amcnlo/maddm/tree/dev}{version dev de MadDM}.}
+\end{minipage}
+
+\vfill
+{\large Mars 2026\par}
+\end{titlepage}
+\clearpage
+\pagenumbering{arabic}
+\setcounter{page}{1}
+
+\begin{abstract}
+\mad\ est un outil numérique automatisé construit dans l'écosystème \mg\ pour l'étude phénoménologique de la matière noire. Il permet notamment de calculer la densité relique thermique, des observables de détection directe et des observables de détection indirecte dans des modèles génériques importés sous forme UFO. Les publications \emph{MadDM v2.0} et \emph{MadDM v3.2} montrent l'extension progressive du code vers la détection directe, puis vers des observables de détection indirecte plus avancées, y compris certains processus induits à une boucle. Le présent document ne décrit pas l'ensemble de \mad, mais deux scripts d'automatisation qui l'encapsulent pour réaliser des scans systématiques et en visualiser les résultats.
+\end{abstract}
+
+\section{Portée du document}
+
+Les deux scripts documentés remplissent des rôles complémentaires :
+
+\begin{itemize}[leftmargin=1.4em]
+\item \script{scan\_relic\_paral\_py3.py} : lancement de points \mad, organisation des scans, création automatique des projets \mad, extraction de la densité relique et des limites de détection, écriture des CSV, production de figures et ajustements en loi de puissance pour les scans 1 à 3.
+\item \script{scan4\_heatmap.py} : lecture des CSV du scan 4, interpolation bidimensionnelle, visualisation des régions favorisées ou exclues et re-scaling de $\Omega h^2$ lorsqu'on change le couplage $\lambda$.
+\end{itemize}
+
+Le flux de travail nominal est donc :
+\begin{lstlisting}[style=bashstyle]
+scan_relic_paral_py3.py  --->  CSV scan4_omega_map_lambda_*.csv
+                                  |
+                                  v
+                          scan4_heatmap.py
+                                  |
+                                  v
+                          cartes / courbes PNG
+\end{lstlisting}
+
+\section{Rappel minimal sur \mad}
+
+Au niveau conceptuel, \mad\ prend un modèle particulaire, identifie le ou les candidats de matière noire, génère les processus utiles, puis calcule des observables cosmologiques et astrophysiques. Dans le cadre des deux scripts ici étudiés, trois blocs physiques sont exploités :
+
+\begin{enumerate}[leftmargin=1.4em]
+\item \textbf{Densité relique} : extraction de \oh\ via la sortie \texttt{Omegah2}.
+\item \textbf{Détection directe} : extraction de sections efficaces nucléon--matière noire, séparées en contributions SI/SD et proton/neutron via les clés \texttt{SigmaN\_SI\_p}, \texttt{SigmaN\_SI\_n}, \texttt{SigmaN\_SD\_p} et \texttt{SigmaN\_SD\_n}.
+\item \textbf{Détection indirecte} : extraction de prédictions et de limites pour \texttt{xsxs\_bbx} et \texttt{Total\_xsec}.
+\end{enumerate}
+
+Dans ces scripts, la logique de décision est très simple : un point est considéré comme \emph{exclu} pour un observable donné quand une limite supérieure numérique existe (\texttt{UL} $\neq -1$) et que la prédiction dépasse cette limite.
+
+\section{Script 1 : \script{scan\_relic\_paral\_py3.py}}
+
+\subsection{Rôle général}
+
+Ce script pilote toute la campagne de calcul. Il :
+\begin{enumerate}[leftmargin=1.4em]
+\item vérifie la présence de \script{bin/maddm} dans un répertoire \mg ;
+\item crée si besoin un projet \mad ;
+\item génère des scripts d'entrée \mad\ temporaires ;
+\item exécute \mad\ point par point ;
+\item extrait les observables depuis la sortie standard ou, en secours, depuis les fichiers du projet ;
+\item lance jusqu'à quatre scans ;
+\item produit des CSV et des figures PNG ;
+\item supprime à la fin les projets \mad\ qu'il a créés lui-même pendant l'exécution.
+\end{enumerate}
+
+\subsection{Arborescence des commandes}
+
+\begin{lstlisting}[style=bashstyle]
+python scan_relic_paral_py3.py --mg5 <chemin_MG5> [options globales]
+
+|-- Configuration du modele
+|   |-- --model <nom_UFO>
+|   |-- --project <nom_projet_MadDM>
+|   `-- --dmname <nom_particule_DM>
+|
+|-- Parametres de carte
+|   |-- --dm-pdg <entier>
+|   |-- --med-pdg <entier>
+|   |-- --coup-block <bloc_SLHA>
+|   |-- --coup-i <indice_i>
+|   `-- --coup-j <indice_j>
+|
+|-- Gestion des sorties
+|   `-- --outdir <repertoire_sortie>
+|
+`-- Selection des scans
+    `-- --scans {all | 1,2,3,4}
+        |-- Scan 1 : Omega h2 = f(My)
+        |   |-- --scan1-mx <Mx_fixe>
+        |   |-- --scan1-my <a_to_b>
+        |   |-- --scan1-step <pas_GeV>
+        |   `-- --scan1-lambda <lambda_fixe>
+        |
+        |-- Scan 2 : Omega h2 = f(Mx)
+        |   |-- --scan2-my <My_fixe>
+        |   |-- --scan2-mx <a_to_b>
+        |   |-- --scan2-step <pas_GeV>
+        |   `-- --scan2-lambda <lambda_fixe>
+        |
+        |-- Scan 3 : Omega h2 = f(lambda)
+        |   |-- --scan3-mx <Mx_fixe>
+        |   |-- --scan3-my <My_fixe>
+        |   |-- --scan3-lambda <a_to_b>
+        |   `-- --scan3-n <nombre_de_points>
+        |
+        `-- Scan 4 : Omega h2(Mx,My) + DD + ID
+            |-- --scan4-step <pas_GeV>
+            |-- --scan4-lambda <lambda_fixe>
+            |-- --scan4-mx <a_to_b>
+            `-- --scan4-my <a_to_b>
+\end{lstlisting}
+
+\subsection{Commandes \mad\ générées automatiquement}
+
+Le script encapsule \mad, mais il faut savoir quelles commandes internes il lui envoie.
+
+\paragraph{Initialisation d'un projet.}
+Quand le projet n'existe pas, la fonction \texttt{ensure\_project()} envoie la séquence suivante :
+\begin{lstlisting}[style=bashstyle]
+import model <model>
+define darkmatter <dmname>
+generate relic_density
+add direct_detection # Comment if you don't use scan 4 to save time
+add indirect_detection # Comment if you don't use scan 4 to save time
+output <project>
+quit
+\end{lstlisting}
+
+\noindent Cette séquence :
+\begin{itemize}[leftmargin=1.4em]
+\item importe le modèle UFO ;
+\item déclare la particule de matière noire ;
+\item génère le calcul de densité relique ;
+\item génère les calculs liés au détections DD/ID  (très longs !); 
+\item crée un projet \mad\ autonome dans le répertoire \mg.
+\end{itemize}
+
+\paragraph{Évaluation d'un point.}
+Pour un point de scan, la fonction \texttt{maddm\_point\_script()} fabrique :
+\begin{lstlisting}[style=bashstyle]
+launch <project>
+set param_card mass <dm_pdg> <m_dm>
+set param_card mass <med_pdg> <m_med>
+set param_card <coup_block> <i> <j> <lambda>
+4 # Menu interactif (ID): passage sigmav -> flux_source
+4 # Menu interactif (ID): passage flux_source -> flux_earth
+quit
+\end{lstlisting}
+
+\noindent Les trois commandes \texttt{set param\_card} modifient explicitement la masse de la matière noire, la masse du médiateur et un couplage dans la carte de paramètres. \textbf{Dans l'état actuel du script, commenter les ajouts des détections est vivement recommandé si le scan 4 n'est pas utilisé pour éviter les calculs longs !}. Par défaut, le flux est réglé sur \texttt{flux\_earth} par l'envoi de deux \texttt{4}.
+
+\subsection{Description physique des quatre scans}
+
+\subsubsection*{Scan 1 : \oh\ en fonction de \(M_y\)}
+Paramètres fixés par l'utilisateur : \opt{--scan1-mx} pour \(M_x\) et \opt{--scan1-lambda} pour \(\lambda\).
+
+Balayage : \opt{--scan1-my} pour l'intervalle en \(M_y\) et \opt{--scan1-step} pour le pas.
+
+Par défaut, le script utilise \(M_x=1000~\mathrm{GeV}\), \(\lambda=1\), \(M_y \in [1100,4100]~\mathrm{GeV}\) et \(\Delta M_y=250~\mathrm{GeV}\). Sorties :
+\begin{itemize}[leftmargin=1.4em]
+\item \file{scan1\_omega\_vs\_mMed.csv}
+\item \file{scan1\_omega\_vs\_mMed.png}
+\item \file{scan1\_omega\_vs\_mMed\_loglog.png}
+\end{itemize}
+Le script tente aussi un ajustement en loi de puissance avec \texttt{scipy.optimize.curve\_fit}.
+
+\subsubsection*{Scan 2 : \oh\ en fonction de \(M_x\)}
+Paramètres fixés par l'utilisateur : \opt{--scan2-my} pour \(M_y\) et \opt{--scan2-lambda} pour \(\lambda\).
+
+Balayage : \opt{--scan2-mx} pour l'intervalle en \(M_x\) et \opt{--scan2-step} pour le pas.
+
+Par défaut, le script utilise \(M_y=2000~\mathrm{GeV}\), \(\lambda=1\), \(M_x \in [100,1900]~\mathrm{GeV}\) et \(\Delta M_x=100~\mathrm{GeV}\). Sorties :
+\begin{itemize}[leftmargin=1.4em]
+\item \file{scan2\_omega\_vs\_mDM.csv}
+\item \file{scan2\_omega\_vs\_mDM.png}
+\item \file{scan2\_omega\_vs\_mDM\_loglog.png}
+\end{itemize}
+Comme pour le scan 1, l'ajustement est maintenant réalisé avec \texttt{scipy.optimize.curve\_fit}.
+
+\subsubsection*{Scan 3 : \oh\ en fonction du couplage \(\lambda\)}
+Paramètres fixés par l'utilisateur : \opt{--scan3-mx} pour \(M_x\) et \opt{--scan3-my} pour \(M_y\).
+
+Balayage log-uniforme : \opt{--scan3-lambda}, avec \opt{--scan3-n} points. 
+
+Par défaut, le script utilise \(M_x=1000~\mathrm{GeV}\), \(M_y=2000~\mathrm{GeV}\) et \(\lambda \in [10^{-3},10]\). \\
+\noindent Sorties :
+\begin{itemize}[leftmargin=1.4em]
+\item \file{scan3\_omega\_vs\_couplage.csv}
+\item \file{scan3\_omega\_vs\_couplage\_loglog.png}
+\end{itemize}
+Le fit en loi de puissance est lui aussi réalisé avec \texttt{scipy.optimize.curve\_fit}.
+
+\subsubsection*{Scan 4 : carte de \oh\ dans le plan $(M_x,M_y)$ avec DD/ID}
+Paramètre fixé : \opt{--scan4-lambda} pour \(\lambda\).
+Balayage sur une grille \((M_x,M_y)\) avec condition cinématique imposée dans le script :
+\[
+M_y > M_x.
+\]
+Ce scan est parallélisé sur \texttt{cpu\_count()} processus. Le script crée un projet \mad\ distinct par processus, ce qui évite les collisions d'écriture. La sortie principale est un CSV contenant :
+\begin{itemize}[leftmargin=1.4em]
+\item \(M_x\), \(M_y\), \oh ;
+\item les prédictions de DD (\texttt{SigmaN\_*}) et leurs limites supérieures ;
+\item les prédictions de ID (\texttt{xsxs\_bbx}, \texttt{Total\_xsec}) et leurs limites supérieures.
+\end{itemize}
+
+\subsection{Table détaillée des options}
+
+\renewcommand{\arraystretch}{1.18}
+{\small
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.18\textwidth} >{\raggedright\arraybackslash}p{0.16\textwidth} >{\raggedright\arraybackslash}p{0.58\textwidth}}
+\toprule
+\textbf{Option} & \textbf{Défaut} & \textbf{Fonction} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Option} & \textbf{Défaut} & \textbf{Fonction} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+
+\opt{--mg5} & obligatoire & Chemin vers le répertoire \mg\ contenant l'exécutable \file{bin/maddm}. Sans cette option, le script ne peut rien lancer. \\
+
+\opt{--model} & \begin{tabular}[t]{@{}l@{}}\texttt{DMSimpt\_v2\_0\_}\\\texttt{LOmassive-F3S\_br}\end{tabular} & Nom du modèle UFO à importer dans \mad. Il est utilisé lors de la création initiale du projet. \\
+
+\opt{--project} & \begin{tabular}[t]{@{}l@{}}\texttt{scan\_bottom\_}\texttt{RD}\end{tabular} & Nom de base du projet \mad. Pour le scan 4 parallèle, le script dérive automatiquement \texttt{<project>\_1}, \texttt{<project>\_2}, etc. \\
+
+\opt{--dmname} & \texttt{xs} & Nom de la particule de matière noire utilisé dans \texttt{define darkmatter}. \\
+
+\opt{--outdir} & \texttt{scan\_outputs} & Répertoire dans lequel sont déposés les CSV et les figures PNG. \\
+
+\opt{--scans} & \texttt{all} & Sélection des scans à exécuter. Les valeurs acceptées sont \texttt{all} ou une liste telle que \texttt{1,3,4}. \\
+
+\opt{--dm-pdg} & \texttt{51} & Code PDG de la matière noire dans la carte de masses. Sert à modifier \texttt{mass <dm-pdg> <m\_dm>}. \\
+
+\opt{--med-pdg} & \texttt{5920005} & Code PDG du médiateur dans la carte de masses. \\
+
+\opt{--coup-block} & \texttt{dmf3d} & Nom du bloc SLHA dans lequel est lu le couplage à modifier. \\
+
+\opt{--coup-i} & \texttt{3} & Premier indice de la matrice de couplage dans le bloc SLHA. \\
+
+\opt{--coup-j} & \texttt{3} & Second indice de la matrice de couplage dans le bloc SLHA. \\
+
+\opt{--scan1-mx} & \texttt{1000.0} & Masse fixe \(M_x\) en GeV pour le scan 1. \\
+
+\opt{--scan1-my} & \texttt{1100to4100} & Intervalle balayé en \(M_y\) pour le scan 1. Le script accepte les syntaxes \texttt{a to b}, \texttt{a:b}, \texttt{a,b} ou \texttt{a..b}. \\
+
+\opt{--scan1-step} & \texttt{250.0} & Pas en GeV utilisé pour construire le balayage en \(M_y\) du scan 1. \\
+
+\opt{--scan1-lambda} & \texttt{1.0} & Valeur fixe du couplage \(\lambda\) pour le scan 1. \\
+
+\opt{--scan2-my} & \texttt{2000.0} & Masse fixe \(M_y\) en GeV pour le scan 2. \\
+
+\opt{--scan2-mx} & \texttt{100to1900} & Intervalle balayé en \(M_x\) pour le scan 2, avec la même syntaxe souple que pour \opt{--scan1-my}. \\
+
+\opt{--scan2-step} & \texttt{100.0} & Pas en GeV utilisé pour construire le balayage en \(M_x\) du scan 2. \\
+
+\opt{--scan2-lambda} & \texttt{1.0} & Valeur fixe du couplage \(\lambda\) pour le scan 2. \\
+
+\opt{--scan3-mx} & \texttt{1000.0} & Masse fixe \(M_x\) en GeV pour le scan 3. \\
+
+\opt{--scan3-my} & \texttt{2000.0} & Masse fixe \(M_y\) en GeV pour le scan 3. \\
+
+\opt{--scan3-lambda} & \texttt{1e-3to10} & Intervalle de balayage du couplage pour le scan 3. Cet intervalle est échantillonné en log-espace. \\
+
+\opt{--scan3-n} & \texttt{30} & Nombre de points du scan log-uniforme en couplage pour le scan 3. \\
+
+\opt{--scan4-step} & \texttt{50.0} & Pas de la grille du scan 4 en GeV. Si \opt{--scan4-mx} ou \opt{--scan4-my} ne sont pas fournis, ce pas est appliqué à la grille par défaut. \\
+
+\opt{--scan4-lambda} & \texttt{1.0} & Valeur fixe du couplage pour le scan 4. Cette valeur est aussi encodée dans le nom du CSV de sortie. \\
+
+\opt{--scan4-mx} & \texttt{None} & Intervalle de balayage de \(M_x\) pour le scan 4. Les syntaxes \texttt{5to4000}, \texttt{5:4000}, \texttt{5,4000} et \texttt{5 to 4000} sont acceptées. \\
+
+\opt{--scan4-my} & \texttt{None} & Intervalle de balayage de \(M_y\) pour le scan 4 avec la même logique de syntaxe que \opt{--scan4-mx}. \\
+
+\end{longtable}
+}
+
+\subsection{Règles d'extraction et de robustesse}
+
+Le script ne se contente pas de lire la sortie standard. Il applique deux stratégies :
+
+\begin{enumerate}[leftmargin=1.4em]
+\item \textbf{Extraction directe depuis stdout}. Des expressions régulières recherchent \texttt{Omegah2 = ...}, les lignes \texttt{SigmaN\_* = [prediction, UL]} et les lignes \texttt{xsxs\_bbx = [prediction, UL]} ou \texttt{Total\_xsec = [prediction, UL]}.
+\item \textbf{Plan B par lecture du projet}. Si la sortie standard ne contient pas l'information attendue, le script parcourt les fichiers du projet \mad\ et récupère la valeur la plus récente trouvée.
+\end{enumerate}
+
+Deux détails importants pour l'interprétation :
+\begin{itemize}[leftmargin=1.4em]
+\item Dans les scans 1 et 2 seulement, une densité relique non finie ou non positive est remplacée par \(1.0\) via \texttt{omega\_default\_if\_bad}. Ce remplacement n'est \emph{pas} appliqué dans les scans 3 et 4.
+\item Une limite supérieure égale à \(-1\) signifie \emph{pas de limite disponible}. Dans ce cas, le point n'est ni marqué comme autorisé ni comme exclu pour l'observable considéré.
+\end{itemize}
+
+\subsection{Exemples d'utilisation}
+
+\subsubsection*{Exécuter tous les scans.}
+\begin{lstlisting}[style=bashstyle]
+python scan_relic_paral_py3.py \
+  --mg5 /chemin/vers/MG5_aMC \
+  --outdir scan_outputs
+\end{lstlisting}
+
+\subsubsection*{Personnaliser le scan 1.}
+\begin{lstlisting}[style=bashstyle]
+python scan_relic_paral_py3.py \
+  --mg5 /chemin/vers/MG5_aMC \
+  --scans 1 \
+  --scan1-mx 750 \
+  --scan1-my 900to3000 \
+  --scan1-step 150 \
+  --scan1-lambda 0.8
+\end{lstlisting}
+
+\subsubsection*{Personnaliser le scan 3.}
+\begin{lstlisting}[style=bashstyle]
+python scan_relic_paral_py3.py \
+  --mg5 /chemin/vers/MG5_aMC \
+  --scans 3 \
+  --scan3-mx 800 \
+  --scan3-my 1600 \
+  --scan3-lambda 1e-4to3 \
+  --scan3-n 40
+\end{lstlisting}
+
+\subsubsection*{Lancer uniquement le scan 4 sur une fenêtre restreinte.}
+\begin{lstlisting}[style=bashstyle]
+python scan_relic_paral_py3.py \
+  --mg5 /chemin/vers/MG5_aMC \
+  --scans 4 \
+  --scan4-lambda 1 \
+  --scan4-step 100 \
+  --scan4-mx 100to2000 \
+  --scan4-my 200to4000
+\end{lstlisting}
+
+\section{Script 2 : \script{scan4\_heatmap.py}}
+
+\subsection{Rôle général}
+
+Ce script lit un CSV du scan 4 et produit des visualisations. Il peut fonctionner en trois modes logiques :
+
+\begin{enumerate}[leftmargin=1.4em]
+\item \textbf{mode carte} : représentation de \oh\ avec ou sans hachures de contraintes DD/ID ;
+\item \textbf{mode re-scaling} : recalcul de \oh\ pour d'autres couplages via la loi \(\Omega \propto \lambda^{-4}\) ;
+\item \textbf{mode iso-courbes} : tracé des lignes de niveau \(\Omega h^2 = \text{constante}\).
+\end{enumerate}
+
+\subsection{Arborescence des commandes}
+
+\begin{lstlisting}[style=bashstyle]
+python scan4_heatmap.py <csvfile> [options]
+
+|-- Modes de carte
+|   |-- --all
+|   `-- --all2
+|
+|-- Reglages visuels
+|   |-- --graph2
+|   |-- --nointerpolation
+|   `-- --interp-n <entier>
+|   |-- --zoom-mx <a_to_b>
+|   `-- --zoom-my <a_to_b>
+|
+`-- Modes analytiques
+    |-- --lambdas <liste>
+    `-- --iso_omega <liste>
+\end{lstlisting}
+
+\noindent En pratique, le script vise les usages suivants :
+\begin{itemize}[leftmargin=1.4em]
+\item \opt{--all} ou \opt{--all2} pour une carte de \oh\ ;
+\item \opt{--lambdas} pour re-scalé \oh\ à partir d'un CSV de référence ;
+\item \opt{--iso_omega} pour des courbes iso-$\Omega h^2$, avec éventuellement \opt{--lambdas} en complément.
+\end{itemize}
+
+\subsection{Formats de données attendus}
+
+Le CSV d'entrée doit contenir au minimum :
+\begin{lstlisting}[style=bashstyle]
+mDM_GeV, mMed_GeV, Omega_h2
+\end{lstlisting}
+
+\noindent et, pour activer les hachures DD/ID :
+\begin{lstlisting}[style=bashstyle]
+SigmaN_SI_p, UL_SigmaN_SI_p
+SigmaN_SI_n, UL_SigmaN_SI_n
+SigmaN_SD_p, UL_SigmaN_SD_p
+SigmaN_SD_n, UL_SigmaN_SD_n
+xsxs_bbx,   UL_xsxs_bbx
+Total_xsec, UL_Total_xsec
+\end{lstlisting}
+
+\subsection{Logique physique et graphique}
+
+\paragraph{Interpolation.}
+Par défaut, la carte de fond est interpolée en deux dimensions sur le plan \((M_y,M_x)\) à l'aide d'une triangulation linéaire. Les points sont restreints à la région \(M_y > M_x\). L'option \opt{--nointerpolation} désactive cette étape et trace uniquement la grille brute issue du CSV.
+
+\paragraph{Décision d'exclusion.}
+La règle codée est :
+\[
+\text{exclu} \Longleftrightarrow (\mathrm{UL}\neq -1)\ \text{et}\ (\mathrm{valeur} > \mathrm{UL}).
+\]
+Les hachures sont regroupées ainsi :
+\begin{itemize}[leftmargin=1.4em]
+\item DD SI : fusion de \texttt{SigmaN\_SI\_p} et \texttt{SigmaN\_SI\_n} ;
+\item DD SD : fusion de \texttt{SigmaN\_SD\_p} et \texttt{SigmaN\_SD\_n} ;
+\item ID \texttt{xsxs\_bbx} ;
+\item ID \texttt{Total\_xsec}.
+\end{itemize}
+
+\paragraph{Re-scaling en couplage.}
+Quand on demande \opt{--lambdas}, le script suppose :
+\[
+\Omega(\lambda) = \Omega(\lambda_0)\left(\frac{\lambda_0}{\lambda}\right)^4.
+\]
+La valeur \(\lambda_0\) est déduite du nom du fichier CSV via le motif \texttt{lambda\_<valeur>}.
+
+\subsection{Table détaillée des options}
+
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.18\textwidth} >{\raggedright\arraybackslash}p{0.16\textwidth} >{\raggedright\arraybackslash}p{0.58\textwidth}}
+\toprule
+\textbf{Option} & \textbf{Défaut} & \textbf{Fonction} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Option} & \textbf{Défaut} & \textbf{Fonction} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+
+\opt{csvfile} & obligatoire & Fichier CSV issu du scan 4. C'est la seule entrée positionnelle du script. \\
+
+\opt{--all} & \texttt{False} & Produit une carte standard dans le plan \((M_y,M_x)\), avec \oh\ en fond et, si présentes, les contraintes DD/ID sous forme de hachures. \\
+
+\opt{--all2} & \texttt{False} & Produit une carte alternative en échelles log-log avec l'axe horizontal \(M_x\) et l'axe vertical \((M_y/M_x - 1)\). \\
+
+\opt{--graph2} & \texttt{False} & Remplace l'échelle de gris centrée autour de \(\Omega h^2 \approx 0.12\) par une échelle simple allant du gris clair au gris foncé entre le minimum et le maximum des données finies. \\
+
+\opt{--nointerpolation} & \texttt{False} & Désactive l'interpolation bidimensionnelle et utilise uniquement les valeurs discrètes du CSV comme fond de carte. \\
+
+\opt{--lambdas} & \texttt{None} & Liste de nouvelles valeurs du couplage \(\lambda\), séparées par des virgules, utilisée pour re-scalé \oh\ selon la loi en \(\lambda^{-4}\). \\
+
+\opt{--iso_omega} & \texttt{None} & Liste de niveaux de \(\Omega h^2\) pour générer des courbes iso-$\Omega h^2$ indépendamment des cartes standard. \\
+
+\opt{--interp-n} & \texttt{350} & Résolution de la grille d'interpolation ; la grille calculée est de taille \(n_x=n_y=\)\opt{--interp-n}. \\
+
+\opt{--zoom-mx} & \texttt{None} & Intervalle de zoom appliqué à la grandeur portée par l'axe associé à \(M_x\) dans la figure sauvegardée. Les syntaxes \texttt{a to b}, \texttt{a:b}, \texttt{a,b} et \texttt{a..b} sont acceptées. \\
+
+\opt{--zoom-my} & \texttt{None} & Intervalle de zoom appliqué à la grandeur portée par l'axe associé à \(M_y\) dans la figure sauvegardée. Les mêmes syntaxes souples que pour \opt{--zoom-mx} sont acceptées. \\
+
+\end{longtable}
+
+\subsection{Sorties produites}
+
+Selon le mode, le script écrit typiquement :
+\begin{itemize}[leftmargin=1.4em]
+\item \file{scan4\_omega\_map\_lambda\_<tag>.png} ;
+\item \file{scan4\_omega\_map\_lambda\_<tag>\_all2.png} ;
+\item \file{scan4\_iso\_omega\_lambda\_<tag>.png}.
+\end{itemize}
+
+Quand une interpolation est effectivement utilisée, le script imprime aussi en fin d'exécution un contrôle rapide sur trois points aléatoires du CSV, avec comparaison valeur brute vs valeur interpolée et erreur relative.
+
+\subsection{Exemples d'utilisation}
+
+\subsubsection*{Carte standard avec hachures DD/ID.}
+\begin{lstlisting}[style=bashstyle]
+python scan4_heatmap.py scan4_omega_map_lambda_1.csv --all
+\end{lstlisting}
+
+\subsubsection*{Même carte, mais dans les variables \(M_x\) et \((M_y/M_x-1)\).}
+\begin{lstlisting}[style=bashstyle]
+python scan4_heatmap.py scan4_omega_map_lambda_1.csv --all2
+\end{lstlisting}
+
+\subsubsection*{Même carte sans interpolation.}
+\begin{lstlisting}[style=bashstyle]
+python scan4_heatmap.py scan4_omega_map_lambda_1.csv --all --nointerpolation
+\end{lstlisting}
+
+\subsubsection*{Re-scaling de la densité relique pour plusieurs couplages.}
+\begin{lstlisting}[style=bashstyle]
+python scan4_heatmap.py scan4_omega_map_lambda_1.csv --lambdas=0.5,1,2,10
+\end{lstlisting}
+
+\subsubsection*{Courbes iso-$\Omega h^2$.}
+\begin{lstlisting}[style=bashstyle]
+python scan4_heatmap.py scan4_omega_map_lambda_1.csv --iso_omega=0.08,0.12,0.20
+\end{lstlisting}
+
+\section{Conseils pratiques d'utilisation}
+
+\subsection{Chaîne minimale de travail}
+
+Une utilisation rationnelle des deux scripts est :
+
+\begin{enumerate}[leftmargin=1.4em]
+\item lancer \script{scan\_relic\_paral\_py3.py} pour générer le CSV du scan 4 ;
+\item vérifier que le nom du CSV encode bien la valeur de \(\lambda\) utilisée ;
+\item lancer \script{scan4\_heatmap.py} sur ce CSV ;
+\item choisir \opt{--all} ou \opt{--all2} selon le plan de visualisation voulu ;
+\item utiliser \opt{--lambdas} seulement si l'hypothèse \(\Omega \propto \lambda^{-4}\) est physiquement acceptable dans le régime étudié.
+\end{enumerate}
+
+\subsection{Points de vigilance}
+
+\begin{itemize}[leftmargin=1.4em]
+\item Le scan 4 impose \(\,M_y > M_x\,\). Aucun point ne sera calculé en dehors de cette région.
+\item Le script 1 nettoie automatiquement les projets \mad\ qu'il a créés lui-même pendant l'exécution. Si un projet existait déjà avant le lancement, il n'est pas supprimé.
+\item Les \(\Omega h^2\) = \(-1.0\) ne sont pas pris en compte lors des fits pour les scans 1 à 3, mais leurs apparitions ne doit pas être ignorées.
+\item Les options \opt{--all}, \opt{--all2}, \opt{--lambdas} et \opt{--iso_omega} ne sont pas strictement déclarées comme mutuellement exclusives dans \texttt{argparse}. Il faut donc respecter les usages logiques présentés dans ce manuel.
+\end{itemize}
+
+\section{Conclusion}
+
+Les deux scripts forment une chaîne cohérente d'automatisation autour de \mad. Le premier encapsule la préparation d'un projet, la modification de la carte de paramètres, le balayage des paramètres et l'agrégation des observables dans des fichiers de sortie exploitables. Le second transforme les sorties du scan 4 en objets visuels directement interprétables, en ajoutant l'interpolation, les hachures d'exclusion et le re-scaling en couplage. Pour un usage fiable, il faut garder à l'esprit les conventions internes du code : condition \(M_y>M_x\), et statut \(-1\) signifiant l'absence de limite expérimentale, une erreur de calcul (non-sens physique?).
+
+\begin{thebibliography}{9}
+
+\bibitem{maddm2}
+M. Backovic, K. Kong, A. Martini, O. Mattelaer and G. Mohlabeng,
+\emph{Direct Detection of Dark Matter with MadDM v.2.0},
+Phys. Dark Univ. 9--10 (2015) 37--50.
+
+\bibitem{maddm32}
+C. Arina, J. Heisig, F. Maltoni, D. Massaro and O. Mattelaer,
+\emph{Indirect dark-matter detection with MadDM v3.2 -- Lines and Loops},
+Eur. Phys. J. C 83 (2023) 241.
+
+\bibitem{dmsimpt_github}
+BFuks,
+\emph{DMSimpt\_v2\_0\_LOmassive (GitHub repository)},
+\url{https://github.com/BFuks/DMSimpt/tree/main/DMSimpt_v2_0_LOmassive}.
+
+\bibitem{mg5_v2927_github}
+mg5amcnlo,
+\emph{MG5\_aMC\_v2\_9\_27 (GitHub release)},
+\url{https://github.com/mg5amcnlo/mg5amcnlo/releases/tag/v2.9.27}.
+
+\bibitem{maddm_dev_github}
+mg5amcnlo,
+\emph{MadDM dev branch (GitHub)},
+\url{https://github.com/mg5amcnlo/maddm/tree/dev}.
+
+\end{thebibliography}
+
+\end{document}
