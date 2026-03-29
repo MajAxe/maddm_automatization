@@ -11,7 +11,7 @@ This repository contains two main scripts:
   Runs automated MadDM scans, generates projects, evaluates relic density, and extracts direct/indirect detection observables.
 
 - `scan4_heatmap.py`  
-  Post-processes Scan 4 CSV outputs to produce heatmaps, exclusion regions, coupling rescalings, and iso-\(\Omega h^2\) curves.
+  Post-processes Scan 4 CSV outputs to produce heatmaps, exclusion regions, coupling rescalings, and iso-Omegah^2 curves.
 
 ## What these scripts do
 
@@ -33,8 +33,8 @@ Main features:
 * extraction of direct detection observables,
 * extraction of indirect detection observables,
 * CSV export,
-* heatmap and contour plotting for the ((M_x, M_y)) plane,
-* coupling rescaling for (\Omega h^2).
+* heatmap and contour plotting for the (M_x, M_y) plane,
+* coupling rescaling for Omega h^2.
 
 ## Requirements
 
@@ -79,7 +79,7 @@ Depending on the selected scan, the scripts generate:
 
 * CSV files with relic density and detection observables,
 * PNG plots for 1D scans,
-* 2D heatmaps and iso-Omegah² contour plots for Scan 4.
+* 2D heatmaps and iso-Omegah^2 contour plots for Scan 4.
 
 ## Important note
 
