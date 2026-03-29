@@ -18,6 +18,9 @@ import matplotlib.colors as colors
 import matplotlib.tri as mtri
 from matplotlib.patches import Patch
 
+matplotlib.rcParams["mathtext.fontset"] = "cm"
+matplotlib.rcParams["font.family"] = "serif"
+
 DD_KEYS = ["SigmaN_SI_p", "SigmaN_SI_n", "SigmaN_SD_p", "SigmaN_SD_n"]
 ID_KEYS = ["xsxs_bbx", "Total_xsec"]
 
@@ -116,6 +119,57 @@ def _safe_float(s, default=float("nan")):
         return float(s)
     except Exception:
         return default
+
+
+def float_to_latex(x, precision=3):
+    try:
+        x = float(x)
+    except Exception:
+        return str(x)
+    if x == 0.0:
+        return "0"
+    s = ("%." + str(int(precision)) + "g") % x
+    if "e" in s or "E" in s:
+        mant, exp = re.split("[eE]", s)
+        return r"%s\times 10^{%d}" % (mant, int(exp))
+    return s
+
+
+def parse_range_to(s):
+    """
+    Parse strings like:
+      "5to4000"
+      "5 to 4000"
+      "5,4000"
+      "5:4000"
+      "5..4000"
+    Returns (a,b) floats or None if s is None/empty.
+    """
+    if s is None:
+        return None
+    ss = str(s).strip()
+    if ss == "":
+        return None
+
+    ss2 = ss.lower().replace(" ", "")
+    for sep in ["to", ",", ":", ".."]:
+        if sep in ss2:
+            parts = ss2.split(sep)
+            if len(parts) >= 2:
+                try:
+                    a = float(parts[0])
+                    b = float(parts[1])
+                    return (a, b)
+                except Exception:
+                    return None
+
+    m = re.match(r"^\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)\s*.*\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)\s*$", ss)
+    if m:
+        try:
+            return (float(m.group(1)), float(m.group(2)))
+        except Exception:
+            return None
+    return None
 
 
 def load_scan4_csv(csv_path):
@@ -394,6 +448,8 @@ def plot_heatmap(
     lambda_val,
     include_all_constraints=False,
     graph2=False,
+    zoom_mx=None,
+    zoom_my=None,
 ):
     dm_min, dm_max = float(ygrid_mx[0]), float(ygrid_mx[-1])
     med_min, med_max = float(xgrid_my[0]), float(xgrid_my[-1])
@@ -445,7 +501,7 @@ def plot_heatmap(
     )
 
     cb = plt.colorbar(im)
-    cb.set_label("Omega h2")
+    cb.set_label(r"$\Omega h^2$")
 
     if graph2:
         cb.set_ticks([vmin, 0.5 * (vmin + vmax), vmax])
@@ -464,11 +520,16 @@ def plot_heatmap(
             "{:.3g}".format(vmax),
         ])
 
-    plt.xlabel("My [GeV]")
-    plt.ylabel("Mx [GeV]")
-    plt.title("Scan4: Omega h2 map (lambda={0})".format(lambda_val))
+    plt.xlabel(r"$M_y\,[\mathrm{GeV}]$")
+    plt.ylabel(r"$M_x\,[\mathrm{GeV}]$")
+    plt.title(r"Scan4: $\Omega h^2$ map ($\lambda=%s$)" % float_to_latex(lambda_val))
 
     _draw_mx_eq_my_line_for_all(med_min, med_max, dm_min, dm_max, color="k")
+
+    if zoom_my is not None:
+        plt.xlim(zoom_my[0], zoom_my[1])
+    if zoom_mx is not None:
+        plt.ylim(zoom_mx[0], zoom_mx[1])
 
     # Hatching grid from CSV (no interpolation for constraints)
     X = [list(med_vals) for _ in dm_vals]
@@ -664,6 +725,8 @@ def plot_heatmap_all2(
     lambda_val,
     include_all_constraints=False,
     graph2=False,
+    zoom_mx=None,
+    zoom_my=None,
 ):
     finite = np.isfinite(z_grid)
     if np.any(finite):
@@ -709,7 +772,7 @@ def plot_heatmap_all2(
     )
 
     cb = plt.colorbar(pcm)
-    cb.set_label("Omega h2")
+    cb.set_label(r"$\Omega h^2$")
 
     if graph2:
         cb.set_ticks([vmin, 0.5 * (vmin + vmax), vmax])
@@ -731,15 +794,20 @@ def plot_heatmap_all2(
     plt.xscale("log")
     plt.yscale("log")
 
-    plt.xlabel("Mx [GeV]")
-    plt.ylabel("(My/Mx - 1)")
-    plt.title("Scan4: Omega h2 map (lambda={0})".format(lambda_val))
+    plt.xlabel(r"$M_x\,[\mathrm{GeV}]$")
+    plt.ylabel(r"$\left(\frac{M_y}{M_x}-1\right)$")
+    plt.title(r"Scan4: $\Omega h^2$ map ($\lambda=%s$)" % float_to_latex(lambda_val))
 
     # "Mx=My" corresponds to r=0; in log scale we draw it at the lower y-bound (plot boundary)
     ymin = float(np.nanmin(ygrid_r))
     xmin = float(np.nanmin(xgrid_mx))
     xmax = float(np.nanmax(xgrid_mx))
     plt.plot([xmin, xmax], [ymin, ymin], color="k")
+
+    if zoom_mx is not None:
+        plt.xlim(zoom_mx[0], zoom_mx[1])
+    if zoom_my is not None:
+        plt.ylim(zoom_my[0], zoom_my[1])
 
     # Hatching overlay: transform CSV grid points (My, Mx) -> (x=Mx, y=r)
     Xtrans = []
@@ -887,7 +955,9 @@ def plot_iso_omega(
     z_grid, xgrid_my, ygrid_mx,
     out_png,
     lambda_val,
-    iso_levels
+    iso_levels,
+    zoom_mx=None,
+    zoom_my=None,
 ):
     dm_min, dm_max = float(ygrid_mx[0]), float(ygrid_mx[-1])
     med_min, med_max = float(xgrid_my[0]), float(xgrid_my[-1])
@@ -905,9 +975,14 @@ def plot_iso_omega(
 
     _draw_mx_eq_my_line_for_all(med_min, med_max, dm_min, dm_max, color="k")
 
-    plt.xlabel("My [GeV]")
-    plt.ylabel("Mx [GeV]")
-    plt.title("Scan4: Iso-Omega (lambda={0})".format(lambda_val))
+    plt.xlabel(r"$M_y\,[\mathrm{GeV}]$")
+    plt.ylabel(r"$M_x\,[\mathrm{GeV}]$")
+    plt.title(r"Scan4: Iso-$\Omega h^2$ ($\lambda=%s$)" % float_to_latex(lambda_val))
+
+    if zoom_my is not None:
+        plt.xlim(zoom_my[0], zoom_my[1])
+    if zoom_mx is not None:
+        plt.ylim(zoom_mx[0], zoom_mx[1])
 
     level_paths = _extract_contour_vertices(cs)
 
@@ -1002,7 +1077,15 @@ def main():
     ap.add_argument("--interp-n", type=int, default=350,
                     help="Interpolation grid resolution (nx=ny). Default 350.")
 
+    ap.add_argument("--zoom-mx", default=None,
+                    help="Mx range like '100to1000' (or '100,1000', '100:1000', '100..1000').")
+    ap.add_argument("--zoom-my", default=None,
+                    help="My range like '100to1000' (or '100,1000', '100:1000', '100..1000').")
+
     args = ap.parse_args()
+
+    zoom_mx = parse_range_to(args.zoom_mx)
+    zoom_my = parse_range_to(args.zoom_my)
 
     csv_path = os.path.abspath(os.path.expanduser(args.csvfile))
     if not os.path.isfile(csv_path):
@@ -1047,7 +1130,9 @@ def main():
                 ygrid_mx=ygrid,
                 out_png=out_png,
                 lambda_val=lam,
-                iso_levels=iso_levels
+                iso_levels=iso_levels,
+                zoom_mx=zoom_mx,
+                zoom_my=zoom_my
             )
             print("Saved:", out_png)
 
@@ -1093,6 +1178,8 @@ def main():
                     lambda_val=lam0,
                     include_all_constraints=include_all,
                     graph2=bool(args.graph2),
+                    zoom_mx=zoom_mx,
+                    zoom_my=zoom_my,
                 )
                 print("Saved:", out_png)
             else:
@@ -1112,6 +1199,8 @@ def main():
                     lambda_val=lam0,
                     include_all_constraints=include_all,
                     graph2=bool(args.graph2),
+                    zoom_mx=zoom_mx,
+                    zoom_my=zoom_my,
                 )
                 print("Saved:", out_png)
         else:
@@ -1141,6 +1230,8 @@ def main():
                     lambda_val=lam0,
                     include_all_constraints=include_all,
                     graph2=bool(args.graph2),
+                    zoom_mx=zoom_mx,
+                    zoom_my=zoom_my,
                 )
                 print("Saved:", out_png)
             else:
@@ -1164,6 +1255,8 @@ def main():
                     lambda_val=lam0,
                     include_all_constraints=include_all,
                     graph2=bool(args.graph2),
+                    zoom_mx=zoom_mx,
+                    zoom_my=zoom_my,
                 )
                 print("Saved:", out_png)
 
@@ -1238,6 +1331,8 @@ def main():
                 lambda_val=lam,
                 include_all_constraints=False,
                 graph2=bool(args.graph2),
+                zoom_mx=zoom_mx,
+                zoom_my=zoom_my,
             )
             print("Saved:", out_png)
         else:
@@ -1266,6 +1361,8 @@ def main():
                 lambda_val=lam,
                 include_all_constraints=False,
                 graph2=bool(args.graph2),
+                zoom_mx=zoom_mx,
+                zoom_my=zoom_my,
             )
             print("Saved:", out_png)
 
