@@ -818,8 +818,6 @@ def main():
                 out = run_maddm(maddm_exe, script, mg5_dir)
                 om = get_omega_from_run_or_files(out, base_proj_dir)
 
-                om = omega_default_if_bad(om, 1.0)
-
                 rows1.append([m_med, om])
                 omega1.append(om)
                 print("[Scan1] My={0:.1f}  Omega={1}".format(m_med, om))
@@ -879,8 +877,6 @@ def main():
                                             args.coup_block, args.coup_i, args.coup_j)
                 out = run_maddm(maddm_exe, script, mg5_dir)
                 om = get_omega_from_run_or_files(out, base_proj_dir)
-
-                om = omega_default_if_bad(om, 1.0)
 
                 rows2.append([m_dm, om])
                 omega2.append(om)
